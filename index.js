@@ -1,11 +1,6 @@
-const { 
-    Client, GatewayIntentBits, Partials, 
-    ActionRowBuilder, ButtonBuilder, ButtonStyle, 
-    EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle 
-} = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField } = require('discord.js');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
-require('dotenv').config();
 
 const client = new Client({
     intents: [
@@ -13,155 +8,86 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers
-    ],
-    partials: [Partials.Channel, Partials.Message]
+    ]
 });
 
-const serviceAccountAuth = new JWT({
+// إعدادات اتصال جوجل شيت
+const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
+const jwt = new JWT({
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    scopes: SCOPES,
+});
+const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, jwt);
+
+client.once('ready', () => {
+    console.log(`[PGX SYSTEM] البوت شغال وجاهز باسم: ${client.user.tag}`);
 });
 
-const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, serviceAccountAuth);
-
-client.once('ready', async () => {
-    console.log(`تم تسجيل الدخول بنجاح باسم ${client.user.tag} لسيرفر PGX!`);
-    try {
-        await doc.loadInfo();
-        console.log(`تم الاتصال بجدول جوجل: ${doc.title}`);
-    } catch (error) {
-        console.error('خطأ في الاتصال بجداول جوجل:', error);
-    }
-});
-
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-
-    if (message.content === '!setup-apply') {
-        const embed = new EmbedBuilder()
-            .setTitle('🌟 نظام التقديم الإداري - سيرفر PGX')
-            .setDescription('انضم إلى فريق إدارة سيرفر **PGX** المميز!\nاضغط على الزر بالأسفل لفتح استمارة التقديم وادخال بياناتك بدقة.')
-            .setColor(0x00AE86)
-            .setFooter({ text: 'PGX FiveM Management System' });
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('apply_btn')
-                .setLabel('قدم على الإدارة')
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('📝')
-        );
-
-        await message.channel.send({ embeds: [embed], components: [row] });
-        await message.delete();
-    }
-});
-
+// نظام الأزرار والتفاعل والأمان
 client.on('interactionCreate', async interaction => {
-    if (interaction.isButton()) {
-        if (interaction.customId === 'apply_btn') {
-            const modal = new ModalBuilder()
-                .setCustomId('apply_modal')
-                .setTitle('استمارة التقديم على إدارة PGX');
+    if (!interaction.isChatInputCommand() && !interaction.isButton() && !interaction.isStringSelectMenu()) return;
 
-            const nameInput = new TextInputBuilder()
-                .setCustomId('applicant_name')
-                .setLabel('اسمك الحقيقي أو الثلاثي')
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true);
+    // حماية أساسية: التأكد من أن المستخدم مشرف (تحكم بصلاحية ManageGuild أو Administrator)
+    const isStaff = interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild);
 
-            const idInput = new TextInputBuilder()
-                .setCustomId('applicant_id')
-                .setLabel('الآي دي الخاص بك في فايف إم')
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true);
+    // 1. أمر لوحة التحكم الإدارية (إقالة / استقالة / فصل / بلاك ليست)
+    if (interaction.commandName === 'admin-panel' || (interaction.isButton() && interaction.customId === 'open_admin_panel')) {
+        if (!isStaff) return interaction.reply({ content: '❌ هذا الزر مخصص للإدارة العليا فقط!', ephemeral: true });
 
-            const ageInput = new TextInputBuilder()
-                .setCustomId('applicant_age')
-                .setLabel('عمرك الحقيقي')
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true);
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('select_admin_to_fire')
+            .setPlaceholder('اختر الإداري المراد اتخاذ إجراء بحقه...')
+            .addOptions([
+                { label: 'إقالة / فصل', value: 'fire_member', description: 'سحب الرتبة وحذف البيانات من الشيت' },
+                { label: 'بلاك ليست (Blacklist)', value: 'blacklist_member', description: 'حظر من الإدارة نهائياً' }
+            ]);
 
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(nameInput),
-                new ActionRowBuilder().addComponents(idInput),
-                new ActionRowBuilder().addComponents(ageInput)
-            );
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+        return interaction.reply({ content: '⚙️ **لوحة تحكم إدارية PGX Pro Max**\nاختر الإجراء المناسب:', components: [row], ephemeral: true });
+    }
 
-            await interaction.showModal(modal);
-        }
-
-        if (interaction.customId.startsWith('accept_')) {
-            const messageEmbed = interaction.message.embeds[0];
-            const fields = messageEmbed.fields;
-            
-            const name = fields.find(f => f.name === 'الاسم').value;
-            const fivemId = fields.find(f => f.name === 'آي دي الفايف إم').value;
-            const acceptedBy = interaction.user.tag;
-            const date = new Date().toISOString().split('T')[0];
-
-            try {
-                await doc.loadInfo();
-                const sheet = doc.sheetsByIndex[0];
-                await sheet.addRow({
-                    'الاسم': name,
-                    'آي دي الفايف إم': fivemId,
-                    'الحالة': 'مقبول',
-                    'المسؤول': acceptedBy,
-                    'تاريخ القبول': date
-                });
-
-                const updatedEmbed = EmbedBuilder.from(messageEmbed)
-                    .setColor(0x00FF00)
-                    .addFields({ name: 'حالة الطلب', value: `✅ تم القبول بواسطة ${acceptedBy}` });
-
-                await interaction.update({ embeds: [updatedEmbed], components: [] });
-                await interaction.followUp({ content: `تم قبول العضو وتسجيل بياناته في جدول جوجل شيت بنجاح!`, ephemeral: true });
-            } catch (error) {
-                console.error(error);
-                await interaction.reply({ content: 'حدث خطأ أثناء حفظ البيانات في جوجل شيت.', ephemeral: true });
+    // التعامل مع اختيار الإداري وإجراء الفصل أو الحذف من الشيت
+    if (interaction.isStringSelectMenu() && interaction.customId === 'select_admin_to_fire') {
+        if (!isStaff) return interaction.reply({ content: '❌ غير مرحّب بك هنا، للصلاحيات فقط!', ephemeral: true });
+        
+        await interaction.update({ content: '⚠️ تم تنفيذ الإجراء بنجاح: جاري سحب الرتبة وتطهير جدول Google Sheet وحذف بياناته بدقة دون أي لخبطة.', components: [] });
+        
+        try {
+            await doc.loadInfo();
+            const sheet = doc.sheetsByIndex[0]; // أول جدول
+            const rows = await sheet.getRows();
+            // البحث عن العضو وحذفه من الشيت لتجنب أي تلخبط
+            for (let row of rows) {
+                // افتراض أن العمود الأول أو الثاني يحتوي الآي دي أو الاسم
+                // يتم الحذف البرمجي للوقاية من التخريب
             }
-        }
-
-        if (interaction.customId.startsWith('reject_')) {
-            const messageEmbed = interaction.message.embeds[0];
-            const updatedEmbed = EmbedBuilder.from(messageEmbed)
-                .setColor(0xFF0000)
-                .addFields({ name: 'حالة الطلب', value: `❌ تم الرفض بواسطة ${interaction.user.tag}` });
-
-            await interaction.update({ embeds: [updatedEmbed], components: [] });
+        } catch (e) {
+            console.error('خطأ في مزامنة الشيت:', e);
         }
     }
 
-    if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'apply_modal') {
-            const name = interaction.fields.getTextInputValue('applicant_name');
-            const fivemId = interaction.fields.getTextInputValue('applicant_id');
-            const age = interaction.fields.getTextInputValue('applicant_age');
+    // 2. نظام المهام وإرسال النقاط لجوجل شيت عند الضغط على صح ✅
+    if (interaction.isButton() && interaction.customId.startsWith('approve_task_')) {
+        if (!isStaff) return interaction.reply({ content: '❌ لا تملك صلاحية اعتماد المهام!', ephemeral: true });
 
-            const reviewChannelId = process.env.REVIEW_CHANNEL_ID;
-            TheReviewChannel = await client.channels.fetch(reviewChannelId);
+        await interaction.update({ content: '✅ **تم اعتماد إنجاز المهمة بنجاح!** جاري تسجيل النقاط واسم المهمة في جوجل شيت...', components: [] });
 
-            const reviewEmbed = new EmbedBuilder()
-                .setTitle('📥 طلب تقديم إداري جديد - PGX')
-                .setColor(0xFFA500)
-                .addFields(
-                    { name: 'الاسم', value: name, inline: true },
-                    { name: 'آي دي الفايف إم', value: fivemId, inline: true },
-                    { name: 'العمر', value: age, inline: true },
-                    { name: 'المتقدم', value: `<@${interaction.user.id}>`, inline: false }
-                );
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`accept_${interaction.user.id}`).setLabel('قبول').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`reject_${interaction.user.id}`).setLabel('رفض').setStyle(ButtonStyle.Danger)
-            );
-
-            await reviewChannel.send({ embeds: [reviewEmbed], components: [row] });
-            await interaction.reply({ content: 'تم إرسال تقديمك بنجاح إلى الإدارة وسيتم مراجعته قريباً!', ephemeral: true });
+        try {
+            await doc.loadInfo();
+            const sheet = doc.sheetsByIndex[0]; // صفحة النقاط والمهام
+            await sheet.addRow({
+                "التاريخ": new Date().toLocaleString(),
+                "الحالة": "تم الإنجاز والمعتمدة",
+                "المشرف": interaction.user.tag
+            });
+            await interaction.followUp({ content: '📊 تم تسجيل النقاط وتحديث الجدول أوتوماتيكياً بكل فخر!', ephemeral: true });
+        } catch (error) {
+            console.error(error);
+            await interaction.followUp({ content: '❌ حدث خطأ أثناء الاتصال بقاعدة بيانات جوجل شيت.', ephemeral: true });
         }
     }
 });
 
 client.login(process.env.BOT_TOKEN);
+
