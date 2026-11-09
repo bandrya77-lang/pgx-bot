@@ -51,7 +51,5 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-const config = require('./config.json');
-client.login(config.token);
-
+client.login(process.env.DISCORD_TOKEN);
 
