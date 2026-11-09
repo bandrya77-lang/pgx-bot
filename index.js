@@ -1,5 +1,19 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField } = require('discord.js');
+const express = require('express');
 
+// 1. تشغيل سيرفر Express الـمهم جداً عشان رندر ما يطفي البوت أبداً
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('PGX Pro Max Bot is online and running smoothly!');
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[EXPRESS] Server is running and listening on port ${PORT}`);
+});
+
+// 2. إعدادات بوت ديسكورد مع الحزم والـ Intents المطلوبة
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -51,7 +65,8 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-const config = require('./config.json');
-client.login(config.t1 + config.t2);
+// تشغيل البوت باستخدام متغير البيئة في Render وتجنب أي ملفات إعدادات خارجية معقدة
+client.login(process.env.DISCORD_TOKEN);
+
 
 
