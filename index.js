@@ -51,8 +51,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// تقسيم التوكن لجزئين عشان قيت هب ما يحظرك وفي نفس الوقت يشتغل بدون مشاكل رندر
-const t1 = "MTU2OTMyODI2NjM1";
-const t2 = "ODE2NTYwNw.GW8sRD.HSDSUgWwT6HRVl7fUIwYkJCLrkMLoiM0_C7Kyk";
-client.login(t1 + t2);
+const config = require('./config.json');
+client.login(config.token);
+
 
